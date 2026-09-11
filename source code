@@ -1,0 +1,344 @@
+# Cell 1: Install required dependencies
+!pip install -q pypdf langchain-text-splitters sentence-transformers faiss-cpu google-genai gradio
+# Cell 2: Import dependencies and setup environment
+import os
+import glob
+import numpy as np
+import faiss
+import gradio as gr
+from pypdf import PdfReader
+from langchain
+text
+_
+_
+splitters import RecursiveCharacterTextSplitter
+from sentence
+_
+transformers import SentenceTransformer
+from google import genai
+# Set up Gemini API key (Replace with your actual key or set in environment)
+os.environ["GOOGLE
+API
+_
+_
+KEY"] = "YOUR
+GEMINI
+API
+KEY"
+_
+_
+_
+# Initialize Client and Embedding Model
+client = genai.Client(api
+_
+key=os.environ["GOOGLE
+API
+_
+_
+KEY"])
+embedding_
+model = SentenceTransformer("all-MiniLM-L6-v2")
+# Global variables to retain uploaded document state across queries
+current
+current
+_
+chunks = []
+index = None
+_
+# Cell 3: Backend RAG Functions
+def process
+_
+uploaded
+_pdfs(files):
+"""
+Extracts text from uploaded PDF documents, splits them into chunks,
+generates embeddings, and builds a FAISS index.
+"""
+global current
+_
+global current
+_
+chunks
+index
+if files is None or len(files) == 0:
+return " Please upload at least one PDF document.
+"
+all
+text = ""
+_
+for file in files:
+try:
+reader = PdfReader(file.name)
+pdf
+text = ""
+_
+for page in reader.pages:
+text = page.extract
+_
+text()
+if text:
+pdf
+text += text + "\n"
+_
+if pdf
+_
+all
+text.strip():
+_
+text += f"\n\nDOCUMENT: {os.path.basename(file.name)}\n{pdf
+_
+text}"
+except Exception as e:
+return f" Error reading {file.name}: {str(e)}"
+if not all
+_
+text.strip():
+return " No readable text was found in the PDFs. Please upload text-based PDF
+documents.
+"
+# Chunk text
+text
+_
+splitter = RecursiveCharacterTextSplitter(
+chunk
+size=800,
+_
+chunk
+_
+overlap=100
+)
+current
+chunks = text
+_
+_
+splitter.split
+_
+text(all
+_
+text)
+# Embed chunks and create vector index
+embeddings = embedding_
+model.encode(current
+chunks, convert
+to
+_
+_
+_
+embeddings = np.array(embeddings).astype("float32")
+numpy=True)
+dimension = embeddings.shape[1]
+current
+_
+index = faiss.IndexFlatL2(dimension)
+current
+_
+index.add(embeddings)
+return (
+f"✅ Successfully processed {len(files)} PDF document(s).\n\n"
+f"📄 Documents processed: {len(files)}\n"
+f"🧩 Text chunks created: {len(current
+_
+chunks)}\n\n"
+f"Your HR documents are ready. You can now ask questions.
+"
+)
+def ask
+"""
+_
+uploaded
+hr
+_
+_question(question):
+Retrieves context using FAISS vector search and generates a grounded
+response using Gemini Flash.
+"""
+global current
+_
+global current
+_
+chunks
+index
+if current
+_
+index is None or len(current
+_
+chunks) == 0:
+return "⚠ Please upload and process your HR PDF documents first.
+"
+if not question.strip():
+return "⚠ Please enter an HR question.
+"
+# Embed user question
+question
+_
+embedding = embedding_
+model.encode([question], convert
+_
+question
+_
+embedding = np.array(question
+_
+embedding).astype("float32")
+to
+_
+numpy=True)
+# Search top k relevant vectors
+k
+_
+val = min(3, len(current
+_
+chunks))
+distances, indices = current
+_
+index.search(question
+_
+embedding, k=k
+_
+val)
+retrieved
+_
+chunks = [current
+_
+chunks[idx] for idx in indices[0] if 0 <= idx < len(current
+_
+context = "\n\n"
+.join(retrieved
+_
+chunks)
+chunks)]
+# Construct RAG prompt
+prompt = f"""
+You are an HR Intelligence Assistant.
+Answer the employee's question using ONLY the information contained in the HR document
+context below.
+IMPORTANT RULES:
+1. Do not invent HR policies.
+2. Do not make assumptions.
+3. If the answer is not available in the documents, clearly state: "I could not find this information
+in the provided HR documents.
+"
+4. Give a clear and concise answer.
+5. Use simple professional language.
+HR DOCUMENT CONTEXT:
+{context}
+EMPLOYEE QUESTION:
+{question}
+ANSWER:
+"""
+try:
+response = client.models.generate
+_
+model="gemini-2.5-flash"
+,
+content(
+contents=prompt
+)
+return response.text
+except Exception as e:
+return f"❌ Gemini API Error: {str(e)}"
+# Cell 4: Custom CSS & Gradio UI Interface
+css = """
+custom
+_
+body {
+margin: 0;
+font-family: Inter, Arial, sans-serif;
+background: radial-gradient(circle at 10% 10%, rgba(99, 102, 241, 0.20), transparent 30%),
+radial-gradient(circle at 90% 20%, rgba(168, 85, 247, 0.18), transparent 30%),
+#070812;
+color: #f8fafc;
+}
+.gradio-container {
+max-width: 1100px !important;
+margin: auto !important;
+padding: 20px !important;
+}
+.hero {
+text-align: center;
+padding: 30px;
+border-radius: 20px;
+background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.10));
+border: 1px solid rgba(255,255,255,0.10);
+margin-bottom: 20px;
+}
+"""
+with gr.Blocks(title="HR Intelligence Assistant"
+, css=custom
+_
+css) as demo:
+gr.HTML("""
+<div class="hero">
+<div style="font-size: 40px;">󰳖</div>
+<h1 style="margin: 0; color: #ffffff;">HR Intelligence Assistant</h1>
+<p style="color: #aeb7cc; margin-top: 5px;">Upload HR policy documents and ask
+questions using AI-powered RAG.
+</p>
+</div>
+""")
+with gr.Row():
+with gr.Column(scale=1):
+pdf
+_
+upload = gr.File(
+label="📄 Upload HR PDF Documents"
+,
+file
+_
+types=["
+.pdf"],
+file
+_
+count="multiple"
+,
+type="filepath"
+)
+process
+upload
+_
+button = gr.Button("⚙ Process Documents"
+, variant="primary")
+_
+status = gr.Textbox(label="
+📊 Document Status"
+, lines=4, interactive=False)
+with gr.Column(scale=1):
+question = gr.Textbox(
+label="💬 Ask HR Question"
+,
+placeholder="Example: How many annual leave days are available?"
+,
+lines=3
+)
+ask
+_
+button = gr.Button("🔍 Submit Question"
+, variant="primary")
+answer = gr.Textbox(label="🤖 HR Assistant Response"
+, lines=6, interactive=False)
+process
+_
+button.click(
+fn=process
+_
+uploaded
+_pdfs,
+inputs=pdf
+_
+upload,
+outputs=upload
+status
+_
+)
+ask
+_
+button.click(
+fn=ask
+_
+uploaded
+hr
+_
+_question,
+inputs=question,
+outputs=answer
+)
+demo.launch()
